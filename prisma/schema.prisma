@@ -1,0 +1,115 @@
+// ============================================================
+// Prisma Schema — 由 SQLite (app.db) 自动逆向生成
+// 生成时间: 2026-06-29
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 模型: User（用户）
+// 来源表: users
+// ============================================================
+model User {
+  // 用户ID（自增主键）
+  id        Int     @id @default(autoincrement())
+  // 用户昵称
+  name      String
+  // 邮箱地址（唯一）
+  email     String  @unique
+  // 角色：user / admin（默认 user）
+  role      String  @default("user")
+  // 创建时间（ISO 8601 格式，例如 "2026-01-15T10:30:00"）
+  createdAt String  @map("created_at")
+
+  // 关联：一个用户有多笔订单
+  orders Order[]
+
+  @@map("users")
+  @@index([role])
+}
+
+// ============================================================
+// 模型: Product（商品）
+// 来源表: products
+// ============================================================
+model Product {
+  // 商品ID（自增主键）
+  id        Int     @id @default(autoincrement())
+  // 商品名称
+  name      String
+  // 单价（浮点数，单位：元）
+  price     Float
+  // 分类，例如 "电子产品"、"家居"
+  category  String
+  // 库存数量（默认 0）
+  stock     Int     @default(0)
+  // 创建时间（ISO 8601 格式）
+  createdAt String  @map("created_at")
+
+  // 关联：一个商品出现在多条订单明细中
+  orderItems OrderItem[]
+
+  @@map("products")
+  @@index([category])
+  @@index([name])
+}
+
+// ============================================================
+// 模型: Order（订单）
+// 来源表: orders
+// ============================================================
+model Order {
+  // 订单ID（自增主键）
+  id         Int     @id @default(autoincrement())
+  // 下单用户ID（外键 → users.id）
+  userId     Int     @map("user_id")
+  // 订单总金额（浮点数，单位：元）
+  totalPrice Float   @map("total_price")
+  // 订单状态：pending / paid / shipped / cancelled（默认 pending）
+  status     String  @default("pending")
+  // 下单时间（ISO 8601 格式）
+  createdAt  String  @map("created_at")
+
+  // 关联：订单所属用户（M:1）
+  user        User        @relation(fields: [userId], references: [id])
+  // 关联：一条订单包含多条明细
+  orderItems  OrderItem[]
+
+  @@map("orders")
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================
+// 模型: OrderItem（订单明细）
+// 来源表: order_items
+// ============================================================
+model OrderItem {
+  // 明细ID（自增主键）
+  id        Int  @id @default(autoincrement())
+  // 所属订单ID（外键 → orders.id）
+  orderId   Int  @map("order_id")
+  // 商品ID（外键 → products.id）
+  productId Int  @map("product_id")
+  // 购买数量
+  quantity  Int
+  // 成交单价（浮点数，单位：元；可能和 products.price 不一致）
+  price     Float
+
+  // 关联：明细所属订单（M:1）
+  order   Order   @relation(fields: [orderId], references: [id])
+  // 关联：明细对应商品（M:1）
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+  @@index([orderId])
+  @@index([productId])
+}
