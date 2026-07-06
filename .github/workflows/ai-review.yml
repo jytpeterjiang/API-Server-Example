@@ -39,6 +39,7 @@ jobs:
       - name: AI Code Review
         env:
           CODEBUDDY_API_KEY: ${{ secrets.CODEBUDDY_API_KEY }}
+          CODEBUDDY_BASE_URL: https://www.codebuddy.cn
         run: |
           # 调试：确认 Key 已注入
           echo "Key length: ${#CODEBUDDY_API_KEY}"
