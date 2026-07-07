@@ -49,16 +49,23 @@ jobs:
             exit 1
           fi
 
-          # 执行审查，输出 JSON
+          # 执行审查，使用 json-schema 保证结构化输出
           cat pr_diff.txt | codebuddy -p \
-            "审查代码变更，输出 JSON 格式：{issues: [{severity, file, line, description, suggestion}]}" \
-            --output-format json > raw_result.json || true
+            --model deepseek-v4-flash \
+            -y \
+            --output-format json \
+            --json-schema '{"type":"object","properties":{"issues":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string"},"file":{"type":"string"},"line":{"type":"number"},"description":{"type":"string"},"suggestion":{"type":"string"}},"required":["severity","file","line","description","suggestion"]}}},"required":["issues"]}' \
+            "请审查以下代码变更，识别潜在的安全漏洞、性能问题和代码质量问题。" \
+            > raw_result.json || {
+              echo "CodeBuddy execution failed"
+              exit 1
+            }
 
-          # 提取干净的 result 字段
+          # 提取 structured_output 字段（使用 --json-schema 时结构化输出在此字段）
           if [ -s raw_result.json ]; then
-            cat raw_result.json | python3 -c "import json,sys; print(json.load(sys.stdin).get('result','{}'))" > review_result.json
+            cat raw_result.json | python3 -c "import json,sys; data=json.load(sys.stdin); print(json.dumps(data.get('structured_output', data.get('result','{}')), ensure_ascii=False))" > review_result.json
           else
-            echo '{}' > review_result.json
+            echo '{"issues":[]}' > review_result.json
           fi
 
       # 6. 发布 PR 评论
