@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      model:
+        description: 'AI 模型名称'
+        required: false
+        default: 'deepseek-v4-flash'
 
 jobs:
   ai-review:
@@ -14,44 +19,50 @@ jobs:
       contents: read
 
     steps:
-      # 1. 检出代码
+      # 检出代码
       - name: Checkout code
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      # 2. 获取 PR 的变更内容
+      # 获取 PR 的变更内容
       - name: Get PR diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
+          git diff origin/${BASE_REF}...HEAD > pr_diff.txt
 
-      # 3. 设置 Node.js 环境
+      # 设置 Node.js 环境
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
 
-      # 4. 安装 CodeBuddy CLI（锁定版本）
-      - name: Install CodeBuddy CLI
-        run: npm install -g @tencent-ai/codebuddy-code@latest
+      # 缓存 npm，加速后续运行
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-global-codebuddy-v2.116.0
 
-      # 5. 执行 AI 代码审查
+      # 安装 CodeBuddy CLI（锁定版本 v2.116.0）
+      - name: Install CodeBuddy CLI
+        run: npm install -g @tencent-ai/codebuddy-code@v2.116.0
+
+      # 执行 AI 代码审查
       - name: AI Code Review
         env:
           CODEBUDDY_API_KEY: ${{ secrets.CODEBUDDY_API_KEY }}
           CODEBUDDY_INTERNET_ENVIRONMENT: internal
+          MODEL_NAME: ${{ github.event.inputs.model || 'deepseek-v4-flash' }}
         run: |
-          # 调试：确认 Key 已注入
-          echo "Key length: ${#CODEBUDDY_API_KEY}"
-
           if [ -z "$CODEBUDDY_API_KEY" ]; then
             echo "Error: CODEBUDDY_API_KEY is not set"
             exit 1
           fi
 
-          # 执行审查，直接输出文本
           cat pr_diff.txt | codebuddy -p \
-            --model deepseek-v4-flash \
+            --model "${MODEL_NAME}" \
             -y \
             "请审查以下代码变更，识别潜在的安全漏洞、性能问题和代码质量问题。" \
             > review_result.txt || {
@@ -59,19 +70,43 @@ jobs:
               exit 1
             }
 
-      # 6. 发布 PR 评论
+      # 发布 PR 评论
       - name: Post review comment
         uses: actions/github-script@v8
         with:
           script: |
+            if (!context.payload.pull_request) {
+              console.log('非 PR 触发，跳过评论发布');
+              return;
+            }
+
             const fs = require('fs');
-            const reviewText = fs.readFileSync('review_result.txt', 'utf8');
+            const MAX_COMMENT_LENGTH = 60000; // GitHub API 限制 65536，预留余量
 
-            const comment = '## [AI] AI 代码审查结果\n\n' + reviewText;
+            let reviewText = fs.readFileSync('review_result.txt', 'utf8');
 
-            github.rest.issues.createComment({
-              issue_number: context.payload.pull_request.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
+            if (!reviewText || reviewText.trim() === '') {
+              console.log('审查结果为空，跳过评论发布');
+              return;
+            }
+
+            const header = '## AI 代码审查结果\n\n';
+            const maxBodyLength = MAX_COMMENT_LENGTH - header.length;
+
+            if (reviewText.length > maxBodyLength) {
+              reviewText = reviewText.substring(0, maxBodyLength - 50) + '\n\n...（审查结果过长，已截断）';
+            }
+
+            const comment = header + reviewText;
+
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.payload.pull_request.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+              console.log('评论发布成功');
+            } catch (error) {
+              core.setFailed(`发布评论失败: ${error.message}`);
+            }
