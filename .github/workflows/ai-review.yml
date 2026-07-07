@@ -38,13 +38,6 @@ jobs:
         with:
           node-version: '24'
 
-      # 缓存 npm，加速后续运行
-      - name: Cache npm
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: npm-global-codebuddy-v2.116.0
-
       # 安装 CodeBuddy CLI（锁定版本 v2.116.0）
       - name: Install CodeBuddy CLI
         run: npm install -g @tencent-ai/codebuddy-code@v2.116.0
